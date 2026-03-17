@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 320px; font-family: -apple-system, sans-serif; padding: 16px; background: #fff; }
+  h1 { font-size: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .status { padding: 8px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+  .status.ok { background: #e8f8f5; color: #00b894; }
+  .status.waiting { background: #fef9e7; color: #f39c12; }
+  .sync-info { background: #f8f9fa; border-radius: 8px; padding: 12px; font-size: 12px; }
+  .sync-info .label { color: #636e72; }
+  .sync-info .value { font-weight: 600; margin-bottom: 4px; }
+  .btn { width: 100%; padding: 10px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 12px; }
+  .btn-primary { background: #0984e3; color: #fff; }
+  .btn-primary:hover { background: #0770c2; }
+  a { color: #0984e3; text-decoration: none; }
+</style>
+</head>
+<body>
+  <h1>📊 에이닷 CRM 수집기</h1>
+  <div class="status" id="status">연결 확인 중...</div>
+  <div class="sync-info">
+    <div class="label">마지막 수집</div>
+    <div class="value" id="last-sync">-</div>
+    <div class="label">수집 페이지</div>
+    <div class="value" id="last-page">-</div>
+    <div class="label">수집 건수</div>
+    <div class="value" id="last-count">-</div>
+  </div>
+  <button class="btn btn-primary" id="open-dashboard" style="background:#d63384;">📊 대시보드 열기</button>
+  <button class="btn btn-primary" id="manual-sync" style="margin-top:8px;">🔄 수동 수집 실행</button>
+  <script src="popup.js"></script>
+</body>
+</html>
