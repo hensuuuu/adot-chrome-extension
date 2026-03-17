@@ -1044,6 +1044,8 @@ async function waitAndCollectPerformance() {
 // 라우터
 // ============================================
 async function run() {
+  if (isRunning) { console.log('[에이닷] 이미 수집 중 — 스킵'); return; }
+  isRunning = true;
   let result = null;
   let pageName = '';
 
@@ -1108,6 +1110,9 @@ async function run() {
   } else {
     console.log('[에이닷] 이 페이지는 수집 대상 아님:', currentPath);
   }
+  
+  isRunning = false;
+  lastUrl = window.location.href; // 수집 중 URL 변경 무시하기 위해 갱신
 }
 
 // 수집 상태 뱃지
