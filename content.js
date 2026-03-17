@@ -391,7 +391,9 @@ async function parsePaymentsAllPages(initialDoc) {
       const paidDate = safeDateParse(paidDateRaw);
       // 납부현황이 "납부완료"인데 날짜가 없으면 오늘 날짜로 대체
       const isPaid = paymentStatus?.includes('완료') || paymentStatus?.includes('납부');
-      const finalPaidAt = paidDate || (isPaid ? new Date().toISOString().split('T')[0] : null);
+      const _pd = new Date();
+      const _todayLocal = `${_pd.getFullYear()}-${String(_pd.getMonth()+1).padStart(2,'0')}-${String(_pd.getDate()).padStart(2,'0')}`;
+      const finalPaidAt = paidDate || (isPaid ? _todayLocal : null);
 
       pagePayments.push({
         student_id: student.id,
@@ -719,7 +721,9 @@ async function collectClassJournals(schedules) {
   const dayNameMap = { 0: '일요일', 1: '월요일', 2: '화요일', 3: '수요일', 4: '목요일', 5: '금요일', 6: '토요일' };
   
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  // 로컬 날짜 포맷 (UTC 변환 방지)
+  const localDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const todayStr = localDateStr(today);
   
   // 최근 3영업일 체크 (오늘 제외, 일요일 건너뜀)
   const checkDates = [];
@@ -729,7 +733,7 @@ async function collectClassJournals(schedules) {
     d.setDate(d.getDate() - offset);
     offset++;
     if (d.getDay() === 0) continue; // 일요일 스킵
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = localDateStr(d);
     checkDates.push({ date: dateStr, dayName: dayNameMap[d.getDay()] });
   }
   
@@ -915,7 +919,8 @@ async function waitAndCollectPerformance() {
 
   const existingStudents = await supabaseSelect('students', 'select=id,name,student_code,teacher_id');
   const records = [];
-  const today = new Date().toISOString().split('T')[0];
+  const _now = new Date();
+  const today = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
 
   boxes.forEach(box => {
     const nameEl = box.querySelector('.student-info1');
@@ -978,7 +983,8 @@ async function waitAndCollectPerformance() {
 
   if (records.length > 0) {
     // 중복 방지: 오늘 이미 수집된 attendance 삭제 후 재삽입
-    const today = new Date().toISOString().split('T')[0];
+    const _td = new Date();
+    const today = `${_td.getFullYear()}-${String(_td.getMonth()+1).padStart(2,'0')}-${String(_td.getDate()).padStart(2,'0')}`;
     try {
       await fetch(`${SUPABASE_URL}/rest/v1/attendance_records?record_date=eq.${today}&type=eq.homework`, {
         method: 'DELETE',
@@ -1124,14 +1130,14 @@ function showBadge(text) {
 }
 
 // 페이지 로드 후 실행
+let isRunning = false;
 setTimeout(run, 2000);
 
 // SPA 네비게이션 감지
 let lastUrl = currentUrl;
 const observer = new MutationObserver(() => {
-  if (window.location.href !== lastUrl) {
+  if (window.location.href !== lastUrl && !isRunning) {
     lastUrl = window.location.href;
     setTimeout(run, 2000);
   }
 });
-observer.observe(document.body, { childList: true, subtree: true });
