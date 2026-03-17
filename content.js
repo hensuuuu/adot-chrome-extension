@@ -1134,15 +1134,6 @@ function showBadge(text) {
   }, 3000);
 }
 
-// 페이지 로드 후 실행
+// 페이지 로드 후 1회만 실행 (SPA가 아니므로 MutationObserver 불필요)
 let isRunning = false;
 setTimeout(run, 2000);
-
-// SPA 네비게이션 감지
-let lastUrl = currentUrl;
-const observer = new MutationObserver(() => {
-  if (window.location.href !== lastUrl && !isRunning) {
-    lastUrl = window.location.href;
-    setTimeout(run, 2000);
-  }
-});

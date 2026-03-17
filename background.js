@@ -92,6 +92,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const summary = Object.entries(collectionResults)
         .map(([k, v]) => `${k}: ${v}건`)
         .join(', ');
+      
+      // lastSync 저장 — dashboard-bridge 자동수집 중복 방지
+      chrome.storage.local.set({ lastSync: { time: new Date().toISOString(), results: collectionResults } });
+      
       notifyAllDashboards({
         action: 'collectionDone',
         message: `✅ 전체 수집 완료! ${summary}`,
