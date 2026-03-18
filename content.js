@@ -145,16 +145,19 @@ async function parseStudentList() {
       if (found) return found;
     }
     
-    // 3. 첫글자 + 끝글자 매칭 (마스킹 해제)
+    // 3. 첫글자 + 끝글자 매칭 (마스킹 해제) — 모호하면 스킵
     if (maskedName && maskedName.includes('*')) {
       const clean = maskedName.replace(/\*/g, '');
       const first = clean[0];
       const last = clean[clean.length - 1];
       if (first && last) {
-        const found = existingTeachers.find(t => 
-          t.name && t.name[0] === first && t.name[t.name.length - 1] === last
+        const candidates = existingTeachers.filter(t =>
+          t.name && t.name[0] === first && t.name[t.name.length - 1] === last && t.name.length === maskedName.length
         );
-        if (found) return found;
+        if (candidates.length === 1) return candidates[0];
+        if (candidates.length > 1) {
+          console.warn(`[에이닷] 선생님 매칭 모호: '${maskedName}' → ${candidates.map(c => c.name).join(', ')} (스킵)`);
+        }
       }
     }
     
@@ -311,11 +314,39 @@ async function parsePayments() {
   return await parsePaymentsAllPages(document);
 }
 
+// 결제 테이블 헤더에서 컬럼 인덱스 동적 탐지
+function findPaymentColumnIndices(doc) {
+  const headers = doc.querySelectorAll('table.tbstyle_a thead th');
+  const indices = {};
+  headers.forEach((th, i) => {
+    const text = th.textContent.trim();
+    if (text.includes('담당')) indices.teacher = i;
+    if (text.includes('학생코드') || text.includes('코드')) indices.studentCode = i;
+    if (text.includes('납부금액') || text.includes('금액')) indices.amount = i;
+    if (text.includes('납부현황') || text.includes('현황')) indices.paymentStatus = i;
+    if (text.includes('납부일')) indices.paidDate = i;
+  });
+  return indices;
+}
+
 async function parsePaymentsAllPages(initialDoc) {
   const url = new URL(window.location.href);
   const baseParams = new URLSearchParams(url.search);
 
   const existingTeachers = await supabaseSelect('teachers', 'select=id,name');
+
+  // 헤더 기반 컬럼 인덱스 (없으면 하드코딩 fallback)
+  const colIdx = findPaymentColumnIndices(initialDoc);
+  const COL_TEACHER = colIdx.teacher ?? 1;
+  const COL_STUDENT_CODE = colIdx.studentCode ?? 6;
+  const COL_AMOUNT = colIdx.amount ?? 11;
+  const COL_PAYMENT_STATUS = colIdx.paymentStatus ?? 12;
+  const COL_PAID_DATE = colIdx.paidDate ?? 13;
+  if (Object.keys(colIdx).length === 0) {
+    console.warn('[에이닷] 결제 테이블 헤더 감지 실패 — 하드코딩 인덱스 사용');
+  } else {
+    console.log('[에이닷] 결제 컬럼 인덱스:', JSON.stringify(colIdx));
+  }
   const existingStudents = await supabaseSelect('students', 'select=id,student_code');
   const allPayments = [];
   let page = parseInt(baseParams.get('page') || '1');
@@ -380,11 +411,11 @@ async function parsePaymentsAllPages(initialDoc) {
       const cells = row.querySelectorAll('td');
       if (cells.length < 12) { skipped++; return; }
 
-      const teacherRaw = cells[1]?.textContent?.trim()?.replace(/T$/, '').trim(); // "김*경"
-      const amount = parseInt(cells[11]?.textContent?.replace(/[^0-9]/g, '') || '0');
-      const paymentStatus = cells[12]?.textContent?.trim(); // 납부현황: 납부완료/미납 등
-      const paidDateRaw = cells[13]?.textContent?.trim();   // 납부일: 2026-03-17
-      const studentCode = cells[6]?.textContent?.trim();
+      const teacherRaw = cells[COL_TEACHER]?.textContent?.trim()?.replace(/T$/, '').trim(); // "김*경"
+      const amount = parseInt(cells[COL_AMOUNT]?.textContent?.replace(/[^0-9]/g, '') || '0');
+      const paymentStatus = cells[COL_PAYMENT_STATUS]?.textContent?.trim(); // 납부현황: 납부완료/미납 등
+      const paidDateRaw = cells[COL_PAID_DATE]?.textContent?.trim();   // 납부일: 2026-03-17
+      const studentCode = cells[COL_STUDENT_CODE]?.textContent?.trim();
 
       // 마스킹 이름 매칭: "김*경" → /^김.경$/ 패턴으로 DB 이름과 비교
       let teacher = null;
@@ -392,10 +423,16 @@ async function parsePaymentsAllPages(initialDoc) {
         const pattern = new RegExp('^' + teacherRaw.replace(/\*/g, '.') + '$');
         teacher = existingTeachers.find(t => t.name && pattern.test(t.name));
         if (!teacher) {
-          // fallback: 첫글자+끝글자 매칭
+          // fallback: 첫글자+끝글자 매칭 — 모호하면 스킵
           const first = teacherRaw[0], last = teacherRaw[teacherRaw.length - 1];
           if (first && last && first !== '*' && last !== '*') {
-            teacher = existingTeachers.find(t => t.name && t.name[0] === first && t.name[t.name.length - 1] === last && t.name.length === teacherRaw.length);
+            const candidates = existingTeachers.filter(t => t.name && t.name[0] === first && t.name[t.name.length - 1] === last && t.name.length === teacherRaw.length);
+            if (candidates.length === 1) {
+              teacher = candidates[0];
+            } else if (candidates.length > 1) {
+              console.warn(`[에이닷] 선생님 매칭 모호: '${teacherRaw}' → ${candidates.map(c => c.name).join(', ')} (스킵)`);
+              teacher = null;
+            }
           }
         }
       }
@@ -563,7 +600,13 @@ async function collectAllPages() {
           const clean = teacherName.replace(/\*/g, '');
           const first = clean[0], last = clean[clean.length - 1];
           if (first && last) {
-            teacher = existingTeachers.find(t => t.name && t.name[0] === first && t.name[t.name.length - 1] === last);
+            const candidates = existingTeachers.filter(t => t.name && t.name[0] === first && t.name[t.name.length - 1] === last && t.name.length === teacherName.length);
+            if (candidates.length === 1) {
+              teacher = candidates[0];
+            } else if (candidates.length > 1) {
+              console.warn(`[에이닷] 선생님 매칭 모호: '${teacherName}' → ${candidates.map(c => c.name).join(', ')} (스킵)`);
+              teacher = null;
+            }
           }
         }
 
@@ -715,8 +758,7 @@ async function collectClassSchedule() {
 
   console.log(`[에이닷] 수업 스케줄 ${schedules.length}건 파싱 완료`);
 
-  // students 테이블에 class_name 필드로 요일+시간 업데이트
-  // (class_name 컬럼을 "월요일 11:30~12:00" 형태로 활용)
+  // students 테이블에 schedule 필드로 요일+시간 업데이트
   const existingStudents = await supabaseSelect('students', 'select=id,student_code');
   let updated = 0;
 
@@ -743,7 +785,9 @@ async function collectClassSchedule() {
           'Content-Type': 'application/json',
           'Prefer': 'return=minimal'
         },
-        body: JSON.stringify({ class_name: job.classInfo })
+        // 'schedule' 컬럼 사용 — class_name(학습반) 덮어쓰기 방지
+        // NOTE: students 테이블에 'schedule' 컬럼 추가 필요 (없으면 PATCH가 무시됨, 안전)
+        body: JSON.stringify({ schedule: job.classInfo })
       });
     }));
     updated += results.filter(r => r.status === 'fulfilled').length;
