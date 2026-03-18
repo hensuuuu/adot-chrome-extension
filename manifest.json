@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "에이닷 CRM → 대시보드",
   "version": "0.4.0",
-  "description": "CRM 데이터를 자동 수집하여 대표원장 대시보드로 표시",
+  "description": "에이닷 CRM 데이터 자동 수집 → 대표원장 대시보드",
   "permissions": [
     "activeTab",
     "storage"
