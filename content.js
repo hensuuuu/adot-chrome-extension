@@ -1271,37 +1271,5 @@ function showBadge(text) {
 let isRunning = false;
 let lastUrl = window.location.href;
 
-// 중복 실행 방지: 같은 페이지 타입에서 이미 수집했으면 스킵
-const RUN_KEY = `adot_collected_${currentPath}`;
-chrome.storage.session.get(RUN_KEY, (data) => {
-  if (data[RUN_KEY]) {
-    console.log(`[에이닷] 이미 수집 완료된 페이지 — 스킵: ${currentPath}`);
-    return;
-  }
-  chrome.storage.session.set({ [RUN_KEY]: Date.now() });
-  setTimeout(run, 2000);
-});
-
-// SPA 탐지용 MutationObserver — URL 실제 변경 시만 (debounce 포함)
-let observerTimer = null;
-const observer = new MutationObserver(() => {
-  if (window.location.href !== lastUrl) {
-    lastUrl = window.location.href;
-    console.log('[에이닷] URL 변경 감지:', lastUrl);
-    // debounce: 빈번한 DOM 변경 시 마지막 것만 실행
-    clearTimeout(observerTimer);
-    observerTimer = setTimeout(() => {
-      // URL이 바뀌었으면 새 페이지이므로 수집 플래그 초기화 후 실행
-      const newKey = `adot_collected_${window.location.pathname}`;
-      chrome.storage.session.get(newKey, (d) => {
-        if (d[newKey]) {
-          console.log(`[에이닷] 이미 수집 완료 — 스킵: ${window.location.pathname}`);
-          return;
-        }
-        chrome.storage.session.set({ [newKey]: Date.now() });
-        run();
-      });
-    }, 2000);
-  }
-});
-observer.observe(document.body, { childList: true, subtree: true });
+// 페이지 로드 후 1회만 실행 (chrome.storage.session은 content script에서 불가)
+setTimeout(run, 2000);
