@@ -679,27 +679,33 @@ async function collectClassSchedule() {
   const existingStudents = await supabaseSelect('students', 'select=id,student_code');
   let updated = 0;
 
+  // 배치 PATCH: 10건씩 묶어 병렬 처리 (N+1 방지)
+  const patchJobs = [];
   for (const s of schedules) {
     const student = existingStudents.find(st => st.student_code === s.student_code);
     if (student) {
       const classInfo = `${s.class_day} ${s.class_time}`;
-      try {
-        const url = `${SUPABASE_URL}/rest/v1/students?id=eq.${student.id}`;
-        await fetch(url, {
-          method: 'PATCH',
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal'
-          },
-          body: JSON.stringify({ class_name: classInfo })
-        });
-        updated++;
-      } catch(e) {
-        console.error(`[에이닷] 학생 업데이트 실패: ${s.name}`, e);
-      }
+      patchJobs.push({ studentId: student.id, classInfo, name: s.name });
     }
+  }
+
+  const CHUNK_SIZE = 10;
+  for (let i = 0; i < patchJobs.length; i += CHUNK_SIZE) {
+    const chunk = patchJobs.slice(i, i + CHUNK_SIZE);
+    const results = await Promise.allSettled(chunk.map(job => {
+      const url = `${SUPABASE_URL}/rest/v1/students?id=eq.${job.studentId}`;
+      return fetch(url, {
+        method: 'PATCH',
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ class_name: job.classInfo })
+      });
+    }));
+    updated += results.filter(r => r.status === 'fulfilled').length;
   }
 
   console.log(`[에이닷] 수업 스케줄: ${updated}/${schedules.length}명 DB 업데이트 완료`);
@@ -979,23 +985,8 @@ async function waitAndCollectPerformance() {
   });
 
   if (records.length > 0) {
-    // 중복 방지: 오늘 이미 수집된 attendance 삭제 후 재삽입
-    const _td = new Date();
-    const today = `${_td.getFullYear()}-${String(_td.getMonth()+1).padStart(2,'0')}-${String(_td.getDate()).padStart(2,'0')}`;
-    try {
-      await fetch(`${SUPABASE_URL}/rest/v1/attendance_records?record_date=eq.${today}&type=eq.homework`, {
-        method: 'DELETE',
-        headers: {
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Prefer': 'return=minimal'
-        }
-      });
-      console.log(`[에이닷] 기존 수행도 삭제 (${today}) → 재삽입`);
-    } catch(e) {
-      console.error('[에이닷] 기존 수행도 삭제 실패:', e);
-    }
-    
+    // upsert로 중복 처리 (supabaseInsert의 Prefer: resolution=merge-duplicates 활용)
+    // NOTE: DB에 UNIQUE (student_id, record_date, type) 제약조건 필요
     await supabaseInsert('attendance_records', records);
     const stats = records.map(r => JSON.parse(r.status));
     const done = stats.filter(s => s.progress_pct >= 100).length;
@@ -1004,16 +995,27 @@ async function waitAndCollectPerformance() {
     console.log(`[에이닷] ✅ 수행도 저장 완료: ✅${done}명 / 🔄${doing}명 / ❌${zero}명`);
     
     // 학생 이름 풀네임 업데이트: 수행도에 풀네임이 있으면 students 테이블 갱신
-    let nameUpdated = 0;
+    // 배치 PATCH: 10건씩 묶어 병렬 처리 (N+1 방지)
+    const namePatchJobs = [];
     for (const r of records) {
       if (!r.student_id) continue;
       try {
         const detail = JSON.parse(r.status);
         const fullName = detail.name;
         if (!fullName || fullName.includes('*')) continue;
-        
-        const url = `${SUPABASE_URL}/rest/v1/students?id=eq.${r.student_id}`;
-        await fetch(url, {
+        namePatchJobs.push({ studentId: r.student_id, fullName });
+      } catch(e) {
+        console.error('[에이닷] 이름 파싱 실패:', e);
+      }
+    }
+
+    let nameUpdated = 0;
+    const NAME_CHUNK = 10;
+    for (let i = 0; i < namePatchJobs.length; i += NAME_CHUNK) {
+      const chunk = namePatchJobs.slice(i, i + NAME_CHUNK);
+      const results = await Promise.allSettled(chunk.map(job => {
+        const url = `${SUPABASE_URL}/rest/v1/students?id=eq.${job.studentId}`;
+        return fetch(url, {
           method: 'PATCH',
           headers: {
             'apikey': SUPABASE_KEY,
@@ -1021,12 +1023,10 @@ async function waitAndCollectPerformance() {
             'Content-Type': 'application/json',
             'Prefer': 'return=minimal'
           },
-          body: JSON.stringify({ name: fullName })
+          body: JSON.stringify({ name: job.fullName })
         });
-        nameUpdated++;
-      } catch(e) {
-        console.error('[에이닷] 이름 업데이트 실패:', e);
-      }
+      }));
+      nameUpdated += results.filter(r => r.status === 'fulfilled').length;
     }
     if (nameUpdated > 0) {
       console.log(`[에이닷] 학생 이름 풀네임 업데이트: ${nameUpdated}명`);
@@ -1043,66 +1043,72 @@ async function waitAndCollectPerformance() {
 async function run() {
   if (isRunning) { console.log('[에이닷] 이미 수집 중 — 스킵'); return; }
   isRunning = true;
-  let result = null;
-  let pageName = '';
 
-  // 학생 목록 — 전체 페이지 자동 순회
-  if (currentSearch.includes('db_name=student') || currentPath.includes('studentlist')) {
-    pageName = '학생 목록';
-    result = await collectAllPages();
-  }
-  // 수업 관리 — 요일별 학생 스케줄 수집
-  else if (currentPath.includes('classPlannerManager')) {
-    pageName = '수업 관리';
-    result = await collectClassSchedule();
-  }
-  // 수행도 관리 — DOM 직접 읽기 (JS 렌더링 대기 후)
-  else if (currentPath.includes('performanceManager')) {
-    pageName = '수행도 관리';
-    // JS가 데이터 렌더링할 시간 대기 (최대 15초)
-    result = await waitAndCollectPerformance();
-  }
-  // SMS 로그
-  else if (currentPath.includes('sms_log') || currentPath.includes('sms')) {
-    pageName = 'SMS 로그';
-    result = await parseSmsLog();
-  }
-  // 결제 현황
-  else if (currentPath.includes('수강권') || currentPath.includes('payment') || currentSearch.includes('결제') || (currentSearch.includes('m_no2=134') && currentSearch.includes('m_no3=136'))) {
-    pageName = '수강권 결제';
-    result = await parsePayments();
-  }
+  try {
+    let result = null;
+    let pageName = '';
 
-  if (result && result.length > 0) {
-    // lastSync는 background.js에서 전체 수집 완료 시 저장함
-    showBadge(`${pageName}: ${result.length}건 수집됨`);
-    
-    // background에 완료 알림 (source 명시)
-    const sourceMap = { '학생 목록': 'students', '수강권 결제': 'payments', '수행도 관리': 'performance', '수업 관리': 'schedule', 'SMS 로그': 'sms' };
-    try {
-      chrome.runtime.sendMessage({ 
-        action: 'contentScriptDone', 
-        count: result.length, 
-        source: sourceMap[pageName] || pageName 
-      });
-    } catch(e) {}
-  } else if (pageName) {
-    showBadge(`${pageName}: 데이터 없음`);
-    // 데이터 없어도 완료 알림 보내서 다음 스텝 진행
-    try {
+    // 학생 목록 — 전체 페이지 자동 순회
+    if (currentSearch.includes('db_name=student') || currentPath.includes('studentlist')) {
+      pageName = '학생 목록';
+      result = await collectAllPages();
+    }
+    // 수업 관리 — 요일별 학생 스케줄 수집
+    else if (currentPath.includes('classPlannerManager')) {
+      pageName = '수업 관리';
+      result = await collectClassSchedule();
+    }
+    // 수행도 관리 — DOM 직접 읽기 (JS 렌더링 대기 후)
+    else if (currentPath.includes('performanceManager')) {
+      pageName = '수행도 관리';
+      // JS가 데이터 렌더링할 시간 대기 (최대 15초)
+      result = await waitAndCollectPerformance();
+    }
+    // SMS 로그
+    else if (currentPath.includes('sms_log') || currentPath.includes('sms')) {
+      pageName = 'SMS 로그';
+      result = await parseSmsLog();
+    }
+    // 결제 현황
+    else if (currentPath.includes('수강권') || currentPath.includes('payment') || currentSearch.includes('결제') || (currentSearch.includes('m_no2=134') && currentSearch.includes('m_no3=136'))) {
+      pageName = '수강권 결제';
+      result = await parsePayments();
+    }
+
+    if (result && result.length > 0) {
+      // lastSync는 background.js에서 전체 수집 완료 시 저장함
+      showBadge(`${pageName}: ${result.length}건 수집됨`);
+
+      // background에 완료 알림 (source 명시)
       const sourceMap = { '학생 목록': 'students', '수강권 결제': 'payments', '수행도 관리': 'performance', '수업 관리': 'schedule', 'SMS 로그': 'sms' };
-      chrome.runtime.sendMessage({ 
-        action: 'contentScriptDone', 
-        count: 0, 
-        source: sourceMap[pageName] || pageName 
-      });
-    } catch(e) {}
-  } else {
-    console.log('[에이닷] 이 페이지는 수집 대상 아님:', currentPath);
+      try {
+        chrome.runtime.sendMessage({
+          action: 'contentScriptDone',
+          count: result.length,
+          source: sourceMap[pageName] || pageName
+        });
+      } catch(e) {}
+    } else if (pageName) {
+      showBadge(`${pageName}: 데이터 없음`);
+      // 데이터 없어도 완료 알림 보내서 다음 스텝 진행
+      try {
+        const sourceMap = { '학생 목록': 'students', '수강권 결제': 'payments', '수행도 관리': 'performance', '수업 관리': 'schedule', 'SMS 로그': 'sms' };
+        chrome.runtime.sendMessage({
+          action: 'contentScriptDone',
+          count: 0,
+          source: sourceMap[pageName] || pageName
+        });
+      } catch(e) {}
+    } else {
+      console.log('[에이닷] 이 페이지는 수집 대상 아님:', currentPath);
+    }
+
+    lastUrl = window.location.href; // 수집 중 URL 변경 무시하기 위해 갱신
+  } catch(e) {
+    console.error('[에이닷] run() 실행 중 에러:', e);
+  } finally {
+    isRunning = false;
   }
-  
-  isRunning = false;
-  lastUrl = window.location.href; // 수집 중 URL 변경 무시하기 위해 갱신
 }
 
 // 수집 상태 뱃지
@@ -1124,6 +1130,16 @@ function showBadge(text) {
   }, 3000);
 }
 
-// 페이지 로드 후 1회만 실행 (SPA가 아니므로 MutationObserver 불필요)
+// 페이지 로드 후 1회 실행 + SPA 탐지용 MutationObserver
 let isRunning = false;
+let lastUrl = window.location.href;
 setTimeout(run, 2000);
+
+const observer = new MutationObserver(() => {
+  if (window.location.href !== lastUrl) {
+    lastUrl = window.location.href;
+    console.log('[에이닷] URL 변경 감지:', lastUrl);
+    setTimeout(run, 2000);
+  }
+});
+observer.observe(document.body, { childList: true, subtree: true });
