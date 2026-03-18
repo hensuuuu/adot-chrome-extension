@@ -1077,14 +1077,7 @@ async function run() {
   }
 
   if (result && result.length > 0) {
-    chrome.storage.local.set({
-      lastSync: {
-        page: pageName || currentPath,
-        count: result.length,
-        time: new Date().toISOString()
-      }
-    });
-    
+    // lastSync는 background.js에서 전체 수집 완료 시 저장함
     showBadge(`${pageName}: ${result.length}건 수집됨`);
     
     // background에 완료 알림 (source 명시)
