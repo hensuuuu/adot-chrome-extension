@@ -6,7 +6,10 @@
 console.log('[에이닷] 대시보드 브릿지 활성화');
 
 // 대시보드 → Extension: postMessage 수신
+const DASHBOARD_ORIGIN = 'https://hensuuuu.github.io';
+
 window.addEventListener('message', (event) => {
+  if (event.origin !== DASHBOARD_ORIGIN) return;
   if (event.source !== window) return;
   if (!event.data || event.data.from !== 'adot-dashboard') return;
 
@@ -18,7 +21,7 @@ window.addEventListener('message', (event) => {
         action: 'collectionStatus',
         status: response?.status || 'error',
         message: response?.message || '알 수 없는 오류'
-      }, '*');
+      }, DASHBOARD_ORIGIN);
     });
   }
 });
@@ -30,7 +33,7 @@ chrome.runtime.onMessage.addListener((msg) => {
       from: 'adot-extension',
       action: msg.action,
       ...msg
-    }, '*');
+    }, DASHBOARD_ORIGIN);
   }
 });
 
@@ -38,7 +41,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 window.postMessage({
   from: 'adot-extension',
   action: 'bridgeReady'
-}, '*');
+}, DASHBOARD_ORIGIN);
 
 // 대시보드 진입 시 자동 수집 시작 (마지막 수집 후 30분 이상 경과 시)
 chrome.storage.local.get('lastSync', (data) => {

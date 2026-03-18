@@ -1,0 +1,56 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1773809220591,
+  "projectRoot": "/private/tmp/adot-chrome-extension",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {},
+  "hotPaths": [
+    {
+      "path": "content.js",
+      "accessCount": 8,
+      "lastAccessed": 1773809349094,
+      "type": "file"
+    },
+    {
+      "path": "dashboard-bridge.js",
+      "accessCount": 5,
+      "lastAccessed": 1773809348565,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 1,
+      "lastAccessed": 1773809241521,
+      "type": "directory"
+    }
+  ],
+  "userDirectives": []
+}
