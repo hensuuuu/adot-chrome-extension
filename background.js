@@ -66,45 +66,49 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.action === 'contentScriptDone') {
-    const step = COLLECTION_STEPS[currentStep];
-    const source = msg.source || step?.source || 'unknown';
-    console.log(`[에이닷 BG] ${source} 수집 완료: ${msg.count}건`);
-    collectionResults[source] = msg.count;
-
-    // 현재 탭 닫기
-    if (currentTabId) {
-      try { chrome.tabs.remove(currentTabId); } catch(e) {}
-      currentTabId = null;
-    }
-
-    // 다음 스텝으로
-    currentStep++;
-    if (currentStep < COLLECTION_STEPS.length) {
-      const next = COLLECTION_STEPS[currentStep];
-      notifyAllDashboards({
-        action: 'collectionProgress',
-        message: `${step.emoji} ${step.name} ${msg.count}건 완료 → ${next.emoji} ${next.name} 수집 중...`
-      });
-      setTimeout(() => runNextStep(), 1000); // 1초 대기 후 다음
-    } else {
-      // 전체 완료
-      collectionInProgress = false;
-      const summary = Object.entries(collectionResults)
-        .map(([k, v]) => `${k}: ${v}건`)
-        .join(', ');
-      
-      // lastSync 저장 — dashboard-bridge 자동수집 중복 방지
-      chrome.storage.local.set({ lastSync: { time: new Date().toISOString(), results: collectionResults } });
-      
-      notifyAllDashboards({
-        action: 'collectionDone',
-        message: `✅ 전체 수집 완료! ${summary}`,
-        results: collectionResults
-      });
-    }
+    const source = msg.source || COLLECTION_STEPS[currentStep]?.source || 'unknown';
+    handleStepDone(source, msg.count);
     return;
   }
 });
+
+function handleStepDone(source, count) {
+  const step = COLLECTION_STEPS[currentStep];
+  console.log(`[에이닷 BG] ${source} 수집 완료: ${count}건`);
+  collectionResults[source] = count;
+
+  // 현재 탭 닫기
+  if (currentTabId) {
+    try { chrome.tabs.remove(currentTabId); } catch(e) {}
+    currentTabId = null;
+  }
+
+  // 다음 스텝으로
+  currentStep++;
+  if (currentStep < COLLECTION_STEPS.length) {
+    const next = COLLECTION_STEPS[currentStep];
+    notifyAllDashboards({
+      action: 'collectionProgress',
+      message: `${step.emoji} ${step.name} ${count}건 완료 → ${next.emoji} ${next.name} 수집 중...`
+    });
+    setTimeout(() => runNextStep(), 1000); // 1초 대기 후 다음
+  } else {
+    // 전체 완료
+    collectionInProgress = false;
+    const summary = Object.entries(collectionResults)
+      .map(([k, v]) => `${k}: ${v}건`)
+      .join(', ');
+
+    // lastSync 저장 — dashboard-bridge 자동수집 중복 방지
+    chrome.storage.local.set({ lastSync: { time: new Date().toISOString(), results: collectionResults } });
+
+    notifyAllDashboards({
+      action: 'collectionDone',
+      message: `✅ 전체 수집 완료! ${summary}`,
+      results: collectionResults
+    });
+  }
+}
 
 function runNextStep() {
   if (currentStep >= COLLECTION_STEPS.length) {
@@ -122,6 +126,15 @@ function runNextStep() {
 
   chrome.tabs.create({ url: step.url, active: false }, (tab) => {
     currentTabId = tab.id;
+
+    // 2분 per-step 타임아웃
+    const stepIndex = currentStep;
+    setTimeout(() => {
+      if (collectionInProgress && currentStep === stepIndex && currentTabId === tab.id) {
+        console.log(`[에이닷 BG] Step ${stepIndex + 1} 타임아웃 (2분)`);
+        handleStepDone(step.source + '_timeout', 0);
+      }
+    }, 120000);
   });
 
   // 10분 타임아웃 (전체)
