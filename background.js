@@ -6,6 +6,15 @@
 let collectionInProgress = false;
 let currentTabId = null;
 
+// service worker 재시작 시 수집 상태 복원
+chrome.storage.local.get('collectionState', (data) => {
+  if (data.collectionState?.inProgress) {
+    // 이전 수집이 비정상 종료됨 — 리셋
+    console.log('[에이닷 BG] 이전 수집 비정상 종료 감지 → 리셋');
+    chrome.storage.local.set({ collectionState: { inProgress: false } });
+  }
+});
+
 // 수집 순서 정의
 const COLLECTION_STEPS = [
   {
@@ -49,6 +58,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
     collectionInProgress = true;
+    chrome.storage.local.set({ collectionState: { inProgress: true, startedAt: Date.now() } });
     currentStep = 0;
     collectionResults = {};
     sendResponse({ status: 'started', message: '전체 수집 시작 (학생→결제→수행도)' });
@@ -95,6 +105,7 @@ function handleStepDone(source, count) {
   } else {
     // 전체 완료
     collectionInProgress = false;
+    chrome.storage.local.set({ collectionState: { inProgress: false } });
     const summary = Object.entries(collectionResults)
       .map(([k, v]) => `${k}: ${v}건`)
       .join(', ');
@@ -143,6 +154,7 @@ function runNextStep() {
       if (collectionInProgress) {
         console.log('[에이닷 BG] 10분 타임아웃 — 강제 종료');
         collectionInProgress = false;
+        chrome.storage.local.set({ collectionState: { inProgress: false } });
         if (currentTabId) {
           try { chrome.tabs.remove(currentTabId); } catch(e) {}
           currentTabId = null;

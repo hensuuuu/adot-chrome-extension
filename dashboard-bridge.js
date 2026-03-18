@@ -44,16 +44,25 @@ window.postMessage({
   version: chrome.runtime.getManifest().version
 }, DASHBOARD_ORIGIN);
 
-// 대시보드 진입 시 자동 수집 (1시간 간격)
-chrome.storage.local.get('lastSync', (data) => {
+// 대시보드 진입 시 자동 수집 (1시간 간격 + 수집중 체크)
+chrome.storage.local.get(['lastSync', 'collectionState'], (data) => {
+  // 이미 수집 중이면 스킵
+  if (data.collectionState?.inProgress) {
+    console.log('[에이닷] 수집 진행 중 → 자동 수집 스킵');
+    return;
+  }
+  
   const last = data.lastSync?.time;
   const elapsed = last ? (Date.now() - new Date(last).getTime()) : Infinity;
   const MIN_INTERVAL = 60 * 60 * 1000; // 1시간
 
   if (elapsed > MIN_INTERVAL) {
     console.log(`[에이닷] 마지막 수집 ${Math.round(elapsed/60000)}분 전 → 자동 수집 시작`);
-    // lastSync를 먼저 갱신해서 중복 트리거 방지
-    chrome.storage.local.set({ lastSync: { time: new Date().toISOString(), status: 'collecting' } });
+    // lastSync + collectionState 동시 갱신
+    chrome.storage.local.set({ 
+      lastSync: { time: new Date().toISOString(), status: 'collecting' },
+      collectionState: { inProgress: true, startedAt: Date.now() }
+    });
     setTimeout(() => {
       chrome.runtime.sendMessage({ action: 'startCollection' }, (res) => {
         console.log('[에이닷] 자동 수집 응답:', res);
