@@ -4,6 +4,7 @@
 
 const SUPABASE_URL = 'https://brpruzsnysqmydsgeexe.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_TJaiY1pCJL2fbWxF5S2quA_yBSxs6jB';
+const MAX_PAGES = 50;
 
 // Supabase REST API 호출
 async function supabaseInsert(table, data) {
@@ -30,13 +31,22 @@ async function supabaseInsert(table, data) {
 
 async function supabaseSelect(table, query = '') {
   const url = `${SUPABASE_URL}/rest/v1/${table}?${query}`;
-  const res = await fetch(url, {
-    headers: {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`
+      }
+    });
+    if (!res.ok) {
+      console.error(`[에이닷] ${table} select 실패: ${res.status}`);
+      return [];
     }
-  });
-  return res.json();
+    return await res.json();
+  } catch(e) {
+    console.error(`[에이닷] ${table} select 네트워크 에러:`, e);
+    return [];
+  }
 }
 
 // ============================================
@@ -335,10 +345,20 @@ async function parsePaymentsAllPages(initialDoc) {
         const html = await res.text();
         if (html.includes('login') && html.length < 5000) {
           console.error('[에이닷] CRM 로그인 만료');
+          showBadge('❌ CRM 로그인 필요');
           break;
         }
         const parser = new DOMParser();
         doc = parser.parseFromString(html, 'text/html');
+
+        // 추가 로그인 만료 감지: 테이블 없고 로그인 폼 있으면 로그인 필요
+        const hasTable = doc.querySelector('table.tbstyle_a');
+        const hasLoginForm = doc.querySelector('input[type="password"]');
+        if (!hasTable && hasLoginForm) {
+          console.error('[에이닷] CRM 로그인 만료 감지 (로그인 폼 발견)');
+          showBadge('❌ CRM 로그인 필요');
+          break;
+        }
       } catch(e) {
         console.error(`[에이닷] 결제 ${page}페이지 fetch 실패:`, e);
         break;
@@ -428,6 +448,10 @@ async function parsePaymentsAllPages(initialDoc) {
 
     // 다음 페이지 시도
     page++;
+    if (page > MAX_PAGES) {
+      console.error('[에이닷] 최대 페이지 도달');
+      break;
+    }
   }
 
   const totalAmount = allPayments.reduce((s, p) => s + (p.amount || 0), 0);
@@ -481,7 +505,16 @@ async function collectAllPages() {
         showBadge('❌ CRM 로그인 필요');
         break;
       }
-      
+
+      // 추가 로그인 만료 감지: 테이블 없고 로그인 폼 있으면 로그인 필요
+      const hasTable = doc.querySelector('table.tbstyle_a');
+      const hasLoginForm = doc.querySelector('input[type="password"]');
+      if (!hasTable && hasLoginForm) {
+        console.error('[에이닷] CRM 로그인 만료 감지 (로그인 폼 발견)');
+        showBadge('❌ CRM 로그인 필요');
+        break;
+      }
+
       if (rows.length === 0) {
         // tr.a가 없으면 tr만으로도 시도
         const fallbackRows = doc.querySelectorAll('table.tbstyle_a tbody tr');
@@ -569,6 +602,10 @@ async function collectAllPages() {
       }
 
       page++;
+      if (page > MAX_PAGES) {
+        console.error('[에이닷] 최대 페이지 도달');
+        break;
+      }
       // 0.5초 대기 (서버 부하 방지)
       await new Promise(r => setTimeout(r, 500));
       
@@ -596,6 +633,7 @@ async function collectClassSchedule() {
   // 수집 중 DOM 조작이 MutationObserver를 트리거하지 않도록 일시 중지
   try { observer.disconnect(); } catch(e) {}
 
+  try {
   // JS 렌더링 대기
   let cards = [];
   for (let i = 0; i < 30; i++) {
@@ -716,8 +754,13 @@ async function collectClassSchedule() {
   
   // 수업일지 수집도 연이어 실행
   await collectClassJournals(schedules);
-  
+
   return schedules;
+
+  } finally {
+    // observer 재연결 (크래시 시에도 보장)
+    try { observer.observe(document.body, { childList: true, subtree: true }); } catch(e) {}
+  }
 }
 
 // ============================================
