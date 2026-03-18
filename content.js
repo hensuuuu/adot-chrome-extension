@@ -592,6 +592,9 @@ async function collectAllPages() {
 async function collectClassSchedule() {
   console.log('[에이닷] 수업 관리 — 학생 스케줄 수집 시작');
   showBadge('📅 수업 스케줄 로딩 대기...');
+  
+  // 수집 중 DOM 조작이 MutationObserver를 트리거하지 않도록 일시 중지
+  try { observer.disconnect(); } catch(e) {}
 
   // JS 렌더링 대기
   let cards = [];
@@ -723,6 +726,9 @@ async function collectClassSchedule() {
 async function collectClassJournals(schedules) {
   console.log('[에이닷] 수업일지 체크 시작 (카드 클릭 방식)...');
   showBadge('📝 수업일지 체크 중...');
+  
+  // 수집 중 DOM 조작(필터 클릭, 카드 클릭)이 MutationObserver를 트리거하지 않도록 일시 중지
+  observer.disconnect();
 
   const dayNameMap = { 0: '일요일', 1: '월요일', 2: '화요일', 3: '수요일', 4: '목요일', 5: '금요일', 6: '토요일' };
   
@@ -860,6 +866,10 @@ async function collectClassJournals(schedules) {
   }
   
   showBadge(`📝 일지 미작성 ${missing}건`);
+  
+  // observer 재연결
+  try { observer.observe(document.body, { childList: true, subtree: true }); } catch(e) {}
+  
   return journalResults;
 }
 
@@ -1130,16 +1140,41 @@ function showBadge(text) {
   }, 3000);
 }
 
-// 페이지 로드 후 1회 실행 + SPA 탐지용 MutationObserver
+// 페이지 로드 후 1회 실행 + 중복 방지
 let isRunning = false;
 let lastUrl = window.location.href;
-setTimeout(run, 2000);
 
+// 중복 실행 방지: 같은 페이지 타입에서 이미 수집했으면 스킵
+const RUN_KEY = `adot_collected_${currentPath}`;
+chrome.storage.session.get(RUN_KEY, (data) => {
+  if (data[RUN_KEY]) {
+    console.log(`[에이닷] 이미 수집 완료된 페이지 — 스킵: ${currentPath}`);
+    return;
+  }
+  chrome.storage.session.set({ [RUN_KEY]: Date.now() });
+  setTimeout(run, 2000);
+});
+
+// SPA 탐지용 MutationObserver — URL 실제 변경 시만 (debounce 포함)
+let observerTimer = null;
 const observer = new MutationObserver(() => {
   if (window.location.href !== lastUrl) {
     lastUrl = window.location.href;
     console.log('[에이닷] URL 변경 감지:', lastUrl);
-    setTimeout(run, 2000);
+    // debounce: 빈번한 DOM 변경 시 마지막 것만 실행
+    clearTimeout(observerTimer);
+    observerTimer = setTimeout(() => {
+      // URL이 바뀌었으면 새 페이지이므로 수집 플래그 초기화 후 실행
+      const newKey = `adot_collected_${window.location.pathname}`;
+      chrome.storage.session.get(newKey, (d) => {
+        if (d[newKey]) {
+          console.log(`[에이닷] 이미 수집 완료 — 스킵: ${window.location.pathname}`);
+          return;
+        }
+        chrome.storage.session.set({ [newKey]: Date.now() });
+        run();
+      });
+    }, 2000);
   }
 });
 observer.observe(document.body, { childList: true, subtree: true });
