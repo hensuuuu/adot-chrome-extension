@@ -37,10 +37,11 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
-// Extension 연결 상태 알림
+// Extension 연결 상태 알림 (버전 포함)
 window.postMessage({
   from: 'adot-extension',
-  action: 'bridgeReady'
+  action: 'bridgeReady',
+  version: chrome.runtime.getManifest().version
 }, DASHBOARD_ORIGIN);
 
 // 대시보드 진입 시 자동 수집 (1시간 간격)

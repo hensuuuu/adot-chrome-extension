@@ -1,0 +1,65 @@
+name: Build & Release Extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'manifest.json'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from manifest
+        id: version
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('manifest.json'))['version'])")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build zip
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          zip -r adot-extension.zip . \
+            -x ".git/*" ".github/*" ".omc/*" "version.json" ".DS_Store"
+
+      - name: Update version.json
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          cat > version.json << EOF
+          {
+            "version": "${{ steps.version.outputs.version }}",
+            "download": "https://github.com/hensuuuu/adot-chrome-extension/releases/download/${{ steps.version.outputs.tag }}/adot-extension.zip",
+            "released": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add version.json
+          git commit -m "chore: update version.json to ${{ steps.version.outputs.version }}" || true
+          git push
+
+      - name: Create Release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "v${{ steps.version.outputs.version }}"
+          body: |
+            에이닷 CRM Extension v${{ steps.version.outputs.version }}
+
+            📥 아래 `adot-extension.zip` 다운로드 → 압축 해제 → chrome://extensions 에서 업데이트
+          files: adot-extension.zip
