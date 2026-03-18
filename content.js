@@ -725,14 +725,11 @@ async function collectClassJournals(schedules) {
   const localDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const todayStr = localDateStr(today);
   
-  // 최근 3영업일 체크 (오늘 제외, 일요일 건너뜀)
+  // 최근 3일 체크 (오늘 제외, 토/일 포함 — 주말 수업 있음)
   const checkDates = [];
-  let offset = 1;
-  while (checkDates.length < 3) {
+  for (let i = 1; i <= 3; i++) {
     const d = new Date(today);
-    d.setDate(d.getDate() - offset);
-    offset++;
-    if (d.getDay() === 0) continue; // 일요일 스킵
+    d.setDate(d.getDate() - i);
     const dateStr = localDateStr(d);
     checkDates.push({ date: dateStr, dayName: dayNameMap[d.getDay()] });
   }
