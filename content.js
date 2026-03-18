@@ -862,14 +862,18 @@ async function collectClassJournals(schedules) {
         const card = [...document.querySelectorAll('.st_select, [data-st_code]')].find(c => c.dataset?.st_code === student.student_code);
         if (!card) { console.log(`[에이닷] 카드 못 찾음: ${student.name}`); continue; }
         
+        // 클릭 전 현재 DOM 상태 스냅샷 (stale 데이터 감지용)
+        const logBefore = document.querySelector('#class-log-items');
+        const prevHtml = logBefore ? logBefore.innerHTML : '';
+        
         card.click();
         
-        // #class-log-items 로딩 대기
+        // #class-log-items가 변경될 때까지 대기 (stale 데이터 방지)
         let logItems = null;
-        for (let w = 0; w < 15; w++) {
+        for (let w = 0; w < 20; w++) {
           await new Promise(r => setTimeout(r, 300));
           logItems = document.querySelector('#class-log-items');
-          if (logItems && logItems.children.length > 0) break;
+          if (logItems && logItems.children.length > 0 && logItems.innerHTML !== prevHtml) break;
         }
         
         // 날짜 형식: "2026년 03월 15일" 또는 "2026년 3월 15일"
@@ -981,8 +985,20 @@ async function collectClassJournals(schedules) {
       });
     
     if (records.length > 0) {
-      const insertOk = await supabaseInsert('attendance_records', records);
-      console.log(`[에이닷] 수업일지 미작성 ${records.length}건 DB 저장 ${insertOk ? '성공' : '실패'} (${journalResults.length - records.length}건 스킵/중복)`);
+      // upsert: unique constraint (student_id, record_date, type) 기준 — DELETE 실패해도 안전
+      const upsertUrl = `${SUPABASE_URL}/rest/v1/attendance_records?on_conflict=student_id,record_date,type`;
+      const upsertRes = await fetch(upsertUrl, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify(records)
+      });
+      const insertOk = upsertRes.ok;
+      if (!insertOk) console.error('[에이닷] upsert 실패:', await upsertRes.text());
+      console.log(`[에이닷] 수업일지 미작성 ${records.length}건 DB 저장 ${insertOk ? '성공' : '실패'}`);
     }
   }
   
