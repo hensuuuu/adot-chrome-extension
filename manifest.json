@@ -1,19 +1,32 @@
 {
   "manifest_version": 3,
   "name": "에이닷 CRM → 대시보드",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "CRM 데이터를 자동 수집하여 대표원장 대시보드로 표시",
-  "permissions": ["activeTab", "storage"],
-  "host_permissions": ["https://crm.adotenglish.com/*"],
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://crm.adotenglish.com/*"
+  ],
   "content_scripts": [
     {
-      "matches": ["https://crm.adotenglish.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://crm.adotenglish.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://hensuuuu.github.io/adot-dashboard/*"],
-      "js": ["dashboard-bridge.js"],
+      "matches": [
+        "https://hensuuuu.github.io/adot-dashboard/*"
+      ],
+      "js": [
+        "dashboard-bridge.js"
+      ],
       "run_at": "document_idle"
     }
   ],

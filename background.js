@@ -164,3 +164,48 @@ function notifyAllDashboards(msg) {
     });
   });
 }
+
+// ============================================
+// 자동 업데이트 체크
+// ============================================
+const VERSION_URL = 'https://raw.githubusercontent.com/hensuuuu/adot-chrome-extension/main/version.json';
+
+async function checkForUpdate() {
+  try {
+    const res = await fetch(VERSION_URL + '?t=' + Date.now());
+    if (!res.ok) return;
+    const remote = await res.json();
+    const local = chrome.runtime.getManifest().version;
+    
+    if (remote.version !== local) {
+      console.log(`[에이닷] 업데이트 발견: ${local} → ${remote.version}`);
+      chrome.storage.local.set({ 
+        updateAvailable: { 
+          version: remote.version, 
+          download: remote.download,
+          notes: remote.notes 
+        } 
+      });
+      // 팝업 배지
+      chrome.action.setBadgeText({ text: 'NEW' });
+      chrome.action.setBadgeBackgroundColor({ color: '#d63031' });
+    } else {
+      chrome.storage.local.remove('updateAvailable');
+      chrome.action.setBadgeText({ text: '' });
+    }
+  } catch(e) {
+    console.log('[에이닷] 업데이트 체크 실패:', e.message);
+  }
+}
+
+// 시작 시 + 6시간마다 체크
+checkForUpdate();
+setInterval(checkForUpdate, 6 * 60 * 60 * 1000);
+
+// 메시지 핸들러에 업데이트 체크 추가
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === 'checkUpdate') {
+    checkForUpdate().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+});

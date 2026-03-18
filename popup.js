@@ -14,6 +14,17 @@ chrome.storage.local.get('lastSync', (data) => {
   }
 });
 
+// 업데이트 체크
+chrome.storage.local.get('updateAvailable', (data) => {
+  if (data.updateAvailable) {
+    const u = data.updateAvailable;
+    document.getElementById('update-banner').style.display = 'block';
+    document.getElementById('update-version').textContent = `v${u.version}`;
+    document.getElementById('update-notes').textContent = u.notes || '';
+    document.getElementById('update-link').href = u.download;
+  }
+});
+
 document.getElementById('open-dashboard').addEventListener('click', () => {
   chrome.tabs.create({ url: 'https://hensuuuu.github.io/adot-dashboard/' });
   window.close();

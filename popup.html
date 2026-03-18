@@ -29,6 +29,12 @@
     <div class="label">수집 건수</div>
     <div class="value" id="last-count">-</div>
   </div>
+  <div id="update-banner" style="display:none; background:#fde8e8; border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
+    <strong style="color:#d63031;">🔔 새 버전 있음!</strong>
+    <span id="update-version"></span>
+    <div id="update-notes" style="color:#636e72; margin:4px 0;"></div>
+    <a id="update-link" href="#" target="_blank" style="font-weight:600;">📥 다운로드</a>
+  </div>
   <button class="btn btn-primary" id="open-dashboard" style="background:#d63384;">📊 대시보드 열기</button>
   <button class="btn btn-primary" id="manual-sync" style="margin-top:8px;">🔄 수동 수집 실행</button>
   <script src="popup.js"></script>
