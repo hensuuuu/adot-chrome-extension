@@ -847,22 +847,40 @@ async function collectClassJournals(schedules) {
   if (journalResults.length > 0) {
     const existingStudents = await supabaseSelect('students', 'select=id,student_code,teacher_id');
     
-    const records = journalResults.map(j => {
-      const student = existingStudents.find(s => s.student_code === j.student_code);
-      return {
-        student_id: student?.id || null,
-        teacher_id: student?.teacher_id || null,
-        record_date: j.class_date,
-        type: 'class_journal',
-        status: JSON.stringify({
-          name: j.student_name, class_day: j.class_day, class_date: j.class_date,
-          journal_written: false, checked_at: new Date().toISOString()
-        })
-      };
-    });
+    // 레코드 생성 + student_id null 제거 + 중복 제거
+    const seen = new Set();
+    const records = journalResults
+      .map(j => {
+        const student = existingStudents.find(s => s.student_code === j.student_code);
+        if (!student?.id) {
+          console.log(`[에이닷] 학생코드 ${j.student_code} (${j.student_name}) 매칭 실패 — 스킵 (null student_id는 중복 원인)`);
+          return null;
+        }
+        return {
+          student_id: student.id,
+          teacher_id: student.teacher_id || null,
+          record_date: j.class_date,
+          type: 'class_journal',
+          status: JSON.stringify({
+            name: j.student_name, class_day: j.class_day, class_date: j.class_date,
+            journal_written: false, checked_at: new Date().toISOString(),
+            st_code: j.student_code  // upsert 보조 식별자
+          })
+        };
+      })
+      .filter(r => {
+        if (!r) return false;
+        // student_id + record_date 기준 중복 제거
+        const key = `${r.student_id}_${r.record_date}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     
-    const insertOk = await supabaseInsert('attendance_records', records);
-    console.log(`[에이닷] 수업일지 미작성 ${records.length}건 DB 저장 ${insertOk ? '성공' : '실패'}`);
+    if (records.length > 0) {
+      const insertOk = await supabaseInsert('attendance_records', records);
+      console.log(`[에이닷] 수업일지 미작성 ${records.length}건 DB 저장 ${insertOk ? '성공' : '실패'} (${journalResults.length - records.length}건 스킵/중복)`);
+    }
   }
   
   showBadge(`📝 일지 미작성 ${missing}건`);
