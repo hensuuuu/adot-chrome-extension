@@ -43,14 +43,22 @@ window.postMessage({
   action: 'bridgeReady'
 }, DASHBOARD_ORIGIN);
 
-// 자동 수집 비활성화 — 대시보드 '🔄 CRM 수집' 버튼으로만 수집
-// (자동 수집이 무한 루프 유발: service worker 재시작 시 플래그 리셋)
+// 대시보드 진입 시 자동 수집 (1시간 간격)
 chrome.storage.local.get('lastSync', (data) => {
   const last = data.lastSync?.time;
   const elapsed = last ? (Date.now() - new Date(last).getTime()) : Infinity;
-  if (last) {
-    console.log(`[에이닷] 마지막 수집 ${Math.round(elapsed/60000)}분 전 — 자동 수집 OFF (수동만 가능)`);
+  const MIN_INTERVAL = 60 * 60 * 1000; // 1시간
+
+  if (elapsed > MIN_INTERVAL) {
+    console.log(`[에이닷] 마지막 수집 ${Math.round(elapsed/60000)}분 전 → 자동 수집 시작`);
+    // lastSync를 먼저 갱신해서 중복 트리거 방지
+    chrome.storage.local.set({ lastSync: { time: new Date().toISOString(), status: 'collecting' } });
+    setTimeout(() => {
+      chrome.runtime.sendMessage({ action: 'startCollection' }, (res) => {
+        console.log('[에이닷] 자동 수집 응답:', res);
+      });
+    }, 3000);
   } else {
-    console.log(`[에이닷] 수집 기록 없음 — 대시보드에서 '🔄 CRM 수집' 버튼 클릭해서 수집 시작`);
+    console.log(`[에이닷] 마지막 수집 ${Math.round(elapsed/60000)}분 전 → 자동 수집 스킵`);
   }
 });
