@@ -673,8 +673,6 @@ async function collectClassSchedule() {
   console.log('[에이닷] 수업 관리 — 학생 스케줄 수집 시작');
   showBadge('📅 수업 스케줄 로딩 대기...');
   
-  // 수집 중 DOM 조작이 MutationObserver를 트리거하지 않도록 일시 중지
-  try { observer.disconnect(); } catch(e) {}
 
   try {
   // JS 렌더링 대기
@@ -802,8 +800,6 @@ async function collectClassSchedule() {
   return schedules;
 
   } finally {
-    // observer 재연결 (크래시 시에도 보장)
-    try { observer.observe(document.body, { childList: true, subtree: true }); } catch(e) {}
   }
 }
 
@@ -814,8 +810,6 @@ async function collectClassJournals(schedules) {
   console.log('[에이닷] 수업일지 체크 시작 (카드 클릭 방식)...');
   showBadge('📝 수업일지 체크 중...');
   
-  // 수집 중 DOM 조작(필터 클릭, 카드 클릭)이 MutationObserver를 트리거하지 않도록 일시 중지
-  observer.disconnect();
 
   const dayNameMap = { 0: '일요일', 1: '월요일', 2: '화요일', 3: '수요일', 4: '목요일', 5: '금요일', 6: '토요일' };
   
@@ -994,8 +988,6 @@ async function collectClassJournals(schedules) {
   
   showBadge(`📝 일지 미작성 ${missing}건`);
   
-  // observer 재연결
-  try { observer.observe(document.body, { childList: true, subtree: true }); } catch(e) {}
   
   return journalResults;
 }
