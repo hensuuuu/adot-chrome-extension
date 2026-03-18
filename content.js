@@ -834,14 +834,36 @@ async function collectClassJournals(schedules) {
           if (logItems && logItems.children.length > 0) break;
         }
         
-        // 날짜 형식: "2026년 03월 15일"
+        // 날짜 형식: "2026년 03월 15일" 또는 "2026년 3월 15일"
         const [cy, cm, cd] = checkDate.date.split('-');
-        const dateKr = `${cy}년 ${cm}월 ${cd}일`;
+        const dateKr1 = `${cy}년 ${cm}월 ${cd}일`;  // 03월 15일
+        const dateKr2 = `${cy}년 ${parseInt(cm)}월 ${parseInt(cd)}일`;  // 3월 15일
         
         let hasJournal = false;
         if (logItems) {
+          // 디버그: 첫 3명까지 DOM 구조 출력
+          if (checked < 3) {
+            console.log(`[에이닷 DEBUG] ${student.name} — #class-log-items children:`, logItems.children.length);
+            console.log(`[에이닷 DEBUG] innerHTML (200자):`, logItems.innerHTML.substring(0, 200));
+            const allTags = logItems.querySelectorAll('.history-title p');
+            console.log(`[에이닷 DEBUG] .history-title p 개수:`, allTags.length);
+            if (allTags.length > 0) console.log(`[에이닷 DEBUG] 첫 번째 p 텍스트:`, allTags[0].textContent);
+            // 셀렉터 확장: .text-w-700 없이도 시도
+            const allP = logItems.querySelectorAll('p');
+            const dateTexts = [...allP].filter(p => p.textContent.includes('년')).map(p => p.textContent.trim());
+            console.log(`[에이닷 DEBUG] '년' 포함 p 태그:`, dateTexts.slice(0, 5));
+          }
+          
+          // 셀렉터 1차: .history-title p.text-w-700
           const dateTags = logItems.querySelectorAll('.history-title p.text-w-700');
-          hasJournal = [...dateTags].some(p => p.textContent.includes(dateKr));
+          // 셀렉터 2차 (fallback): 모든 p에서 날짜 찾기
+          const allP = dateTags.length > 0 ? dateTags : logItems.querySelectorAll('p');
+          hasJournal = [...allP].some(p => {
+            const t = p.textContent;
+            return t.includes(dateKr1) || t.includes(dateKr2);
+          });
+        } else {
+          if (checked < 3) console.log(`[에이닷 DEBUG] ${student.name} — #class-log-items 없음!`);
         }
         
         checked++;
